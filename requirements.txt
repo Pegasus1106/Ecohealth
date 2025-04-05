@@ -12,4 +12,3 @@ sendgrid==6.11.0
 SQLAlchemy==2.0.34
 streamlit==1.37.1
 streamlit==1.43.2
-~lotly==5.24.1
