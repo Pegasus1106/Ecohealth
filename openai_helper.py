@@ -2,15 +2,20 @@ import os
 import json
 from openai import OpenAI
 import time
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # OpenAI API key
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "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")
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+print(f"OPENAI_API_KEY present: {bool(OPENAI_API_KEY)}")
 
 # Initialize OpenAI client
 # the newest OpenAI model is "gpt-4o" which was released May 13, 2024.
 # do not change this unless explicitly requested by the user
 try:
     client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
+    print(f"OpenAI client initialized: {client is not None}")
 except Exception as e:
     print(f"Error initializing OpenAI client: {str(e)}")
     client = None
