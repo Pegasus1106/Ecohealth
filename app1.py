@@ -16,6 +16,10 @@ import json
 import base64
 from PIL import Image
 import os
+import folium
+from streamlit_folium import folium_static
+from model_page import model_page
+
 
 # Page Configuration
 st.set_page_config(
@@ -35,7 +39,7 @@ st.markdown("""
         align-items: center;
         padding: 1rem 2rem;
         background-color: #e8ffec;
-        color: #f4f4f4;
+        color: #000000;
         margin: -60px -60px 0px -60px;
         border-radius: 8px;
         box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.1);
@@ -48,8 +52,8 @@ st.markdown("""
 
     .brand {
         font-size: 24px;
-        color: #ffffff;
-        text-decoration: none;
+        color: #000000 !important;
+        text-decoration: none !important;
         font-weight: bold;
     }
 
@@ -59,8 +63,8 @@ st.markdown("""
     }
 
     .nav-link {
-        color: #f4f4f4;
-        text-decoration: none;
+        color: #000000 !important;
+        text-decoration: none !important;
         font-size: 16px;
         padding: 5px 10px;
         border-radius: 5px;
@@ -68,65 +72,13 @@ st.markdown("""
     }
 
     .nav-link:hover {
-        color: #ffffff;
+        color: #166534 !important;
         background-color: #61ff73;
     }
 
-    /* Feature card styling */
-    .feature-container {
-        display: flex;
-        justify-content: space-between;
-        gap: 20px;
-        margin-top: 2rem;
-        padding: 0 2rem;
-    }
-
-    .feature-card {
-        background-color: white;
-        border-radius: 10px;
-        padding: 20px;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        flex: 1;
-        text-align: center;
-        transition: transform 0.3s ease;
-    }
-
-    .feature-card:hover {
-        transform: translateY(-10px);
-    }
-
-    .feature-card img {
-        width: 100%;
-        height: 200px;
-        object-fit: cover;
-        border-radius: 8px;
-        margin-bottom: 15px;
-    }
-
-    .feature-card h3 {
-        color: #2c3e50;
-        margin-bottom: 10px;
-        font-size: 1.5rem;
-    }
-
-    .feature-card p {
-        color: #7f8c8d;
-        font-size: 1rem;
-        line-height: 1.5;
-    }
-
-    /* Main content styling */
-    .main-content {
-        padding: 2rem;
-        background-color: #f8faf8;
-    }
-
-    .welcome-section {
-        text-align: center;
-        margin: 2rem 0;
-    }
-    </style>
+    
 """, unsafe_allow_html=True)
+
 
 
 # Create SVG images - storing inline for reliability
@@ -314,12 +266,13 @@ health_svg = """
 def navigation():
     st.markdown("""
         <div class="navbar">
-            <a href="#" class="brand">Ecohealth Insights</a>
+            <a href="#" class="brand">🌿Ecohealth Insights</a>
             <div class="nav-links">
                 <a href="/?page=home" class="nav-link" target="_self">Home</a>
                 <a href="/?page=about" class="nav-link" target="_self">About</a>
                 <a href="/?page=weather" class="nav-link" target="_self">Weather</a>
                 <a href="/?page=visualizations" class="nav-link" target="_self">Visualizations</a>
+                <a href="/?page=model" class="nav-link" target="_self">Model</a>
             </div>
         </div>
     """, unsafe_allow_html=True)
@@ -484,7 +437,7 @@ def about_page():
         st.markdown("""
         It provides real-time weather and air quality monitoring:
         - **Location-based Data**: Enter your city, state, and country
-        - **Real-time Updates**: Powered by Tomorrow.io and OpenWeatherMap APIs
+        - **Real-time Updates**: Powered by Tomorrow.io, Open-Meteo, and OpenWeatherMap APIs
         - **Comprehensive Metrics**: Temperature, humidity, air quality index (AQI), and more
         - **Instant Access**: Get immediate insights about your local environmental conditions
         """)
@@ -568,6 +521,10 @@ def weather_page():
         st.session_state.health_advice = None
     if 'error' not in st.session_state:
         st.session_state.error = None
+    if 'coordinates' not in st.session_state:
+        st.session_state.coordinates = None
+    if 'location_info' not in st.session_state:
+        st.session_state.location_info = {"city": "", "state": "", "country": ""}
 
     st.title("🌤️Weather & Health Advisor")
     st.markdown("""
@@ -602,9 +559,9 @@ def weather_page():
                         # Get current weather and AQI data
                         current_data = weather.get_current_weather_and_aqi(coordinates['lat'], coordinates['lng'])
                         
-                        # Get historical data (past 6 months)
+                        # Get last 24 hours data only
                         end_date = datetime.now()
-                        start_date = end_date - timedelta(days=180)  # 6 months
+                        start_date = end_date - timedelta(days=1)  # 24 hours
                         historical_data = weather.get_historical_data(
                             coordinates['lat'], 
                             coordinates['lng'], 
@@ -612,7 +569,7 @@ def weather_page():
                             end_date
                         )
                         
-                        # Get health recommendations
+                        # Get health recommendations based on temperature and AQI
                         health_advice = ai.get_health_recommendations(
                             location=f"{city}, {state}, {country}",
                             temperature_c=current_data.get('temperature'),
@@ -623,6 +580,8 @@ def weather_page():
                         st.session_state.current_data = current_data
                         st.session_state.historical_data = historical_data
                         st.session_state.health_advice = health_advice
+                        st.session_state.coordinates = coordinates
+                        st.session_state.location_info = {"city": city, "state": state, "country": country}
                         st.session_state.location_submitted = True
                         
             except Exception as e:
@@ -635,104 +594,195 @@ def weather_page():
 
     # Display results if location submitted
     if st.session_state.location_submitted and st.session_state.current_data:
-        st.markdown("## Current Weather and AQI Data")
+        # Create two columns for map and weather data side by side
+        map_col, weather_col = st.columns(2)
         
-        # Display current data in columns
-        col1, col2, col3 = st.columns(3)
+        # Column 1: Map display
+        with map_col:
+            st.markdown("## Location Map")
+            try:
+                if st.session_state.coordinates:
+                    m = folium.Map(location=[st.session_state.coordinates['lat'], st.session_state.coordinates['lng']], zoom_start=10)
+                    
+                    location_info = st.session_state.location_info
+                    location_name = f"{location_info['city']}, {location_info['state']}, {location_info['country']}"
+                    popup_text = f"""
+                    <b>{location_name}</b><br>
+                    Latitude: {st.session_state.coordinates['lat']:.4f}<br>
+                    Longitude: {st.session_state.coordinates['lng']:.4f}
+                    """
+                    folium.Marker(
+                        location=[st.session_state.coordinates['lat'], st.session_state.coordinates['lng']],
+                        popup=folium.Popup(popup_text, max_width=300),
+                        tooltip=location_name,
+                        icon=folium.Icon(color='blue', icon='cloud')
+                    ).add_to(m)
+                    
+                    folium_static(m)
+                else:
+                    st.warning("Location coordinates not available.")
+            except Exception as e:
+                st.error(f"Error displaying location map: {str(e)}")
         
-        with col1:
-            st.metric(
-                label="Temperature", 
-                value=f"{st.session_state.current_data['temperature']:.1f}°C",
-                delta=f"{utils.celsius_to_fahrenheit(st.session_state.current_data['temperature']):.1f}°F"
-            )
+        # Column 2: Current Weather and AQI Data
+        with weather_col:
+            st.markdown("## Current Weather and AQI Data")
             
-        with col2:
-            aqi = st.session_state.current_data['aqi']
-            aqi_color = utils.get_aqi_color(aqi)
-            aqi_label = utils.get_aqi_label(aqi)
+            col1, col2 = st.columns(2)
             
-            st.metric(
-                label=f"Air Quality Index ({aqi_label})", 
-                value=f"{aqi:.1f}"
-            )
-            st.markdown(f"<div style='width:100%;height:20px;background-color:{aqi_color}'></div>", unsafe_allow_html=True)
-            
-        with col3:
-            humidity = st.session_state.current_data.get('humidity', 'N/A')
-            if humidity != 'N/A':
-                humidity = f"{humidity:.1f}%"
-            
-            st.metric(
-                label="Humidity", 
-                value=humidity
-            )
-            
-            wind_speed = st.session_state.current_data.get('wind_speed', 'N/A')
-            if wind_speed != 'N/A':
-                wind_speed = f"{wind_speed:.1f} m/s"
-            
-            st.metric(
-                label="Wind Speed", 
-                value=wind_speed
-            )
+            with col1:
+                st.metric(
+                    label="Temperature", 
+                    value=f"{st.session_state.current_data['temperature']:.1f}°C",
+                    delta=f"{utils.celsius_to_fahrenheit(st.session_state.current_data['temperature']):.1f}°F"
+                )
+                
+                feels_like = st.session_state.current_data.get('temperature_apparent', 'N/A')
+                if feels_like != 'N/A':
+                    feels_like = f"{feels_like:.1f}°C"
+                
+                st.metric(label="Feels Like", value=feels_like)
+                
+                humidity = st.session_state.current_data.get('humidity', 'N/A')
+                if humidity != 'N/A':
+                    humidity = f"{humidity:.1f}%"
+                
+                st.metric(label="Humidity", value=humidity)
+                
+                cloud_cover = st.session_state.current_data.get('cloud_cover', 'N/A')
+                if cloud_cover != 'N/A':
+                    cloud_cover = f"{cloud_cover:.0f}%"
+                
+                st.metric(label="Cloud Coverage", value=cloud_cover)
+                
+            with col2:
+                aqi = st.session_state.current_data['aqi']
+                aqi_color = utils.get_aqi_color(aqi)
+                aqi_label = utils.get_aqi_label(aqi)
+                
+                st.metric(label=f"Air Quality Index ({aqi_label})", value=f"{aqi:.1f}")
+                st.markdown(f"<div style='width:100%;height:20px;background-color:{aqi_color}'></div>", unsafe_allow_html=True)
+                
+                wind_speed = st.session_state.current_data.get('wind_speed', 'N/A')
+                if wind_speed != 'N/A':
+                    wind_speed = f"{wind_speed:.1f} m/s"
+                
+                st.metric(label="Wind Speed", value=wind_speed)
+                
+                pressure = st.session_state.current_data.get('pressure', 'N/A')
+                if pressure != 'N/A':
+                    pressure = f"{pressure:.1f} hPa"
+                
+                st.metric(label="Pressure", value=pressure)
+                
+                visibility = st.session_state.current_data.get('visibility', 'N/A')
+                if visibility != 'N/A':
+                    visibility = f"{visibility:.1f} km"
+                
+                st.metric(label="Visibility", value=visibility)
         
-        # Forecast data
-        try:
-            coordinates = utils.get_coordinates(city, state, country)
-            forecast_data = weather.get_forecast_data(coordinates['lat'], coordinates['lng'])
 
-            st.markdown("## Weather & AQI Forecast (Next 7 Days)")
-            forecast_fig = viz.plot_forecast(forecast_data)
-            st.plotly_chart(forecast_fig, use_container_width=True)
+        # Get and display forecast data
+        if st.session_state.location_submitted and not st.session_state.error:
+            try:
+                if st.session_state.coordinates:
+                    forecast_data = weather.get_forecast_data(
+                        st.session_state.coordinates['lat'], 
+                        st.session_state.coordinates['lng']
+                    )
 
-            # Forecast table
-            forecast_df = pd.DataFrame(forecast_data)
-            forecast_df['date'] = pd.to_datetime(forecast_df['date']).dt.strftime('%Y-%m-%d')
-            forecast_df = forecast_df.round(1)
-            forecast_df.columns = ['Date', 'Min Temp (°C)', 'Max Temp (°C)', 'Avg Temp (°C)', 
-                                 'Min AQI', 'Max AQI', 'Avg AQI']
-            st.dataframe(forecast_df, use_container_width=True)
+                    st.markdown("## Weather & AQI Forecast (Next Few Days)")
+                    forecast_fig = viz.plot_forecast(forecast_data)
+                    st.plotly_chart(forecast_fig, use_container_width=True)
 
-        except Exception as e:
-            st.error(f"Error getting forecast data: {str(e)}")
+                    forecast_df = pd.DataFrame(forecast_data)
+                    forecast_df['date'] = pd.to_datetime(forecast_df['date']).dt.strftime('%Y-%m-%d')
+                    forecast_df = forecast_df.round(1)
+                    forecast_df.columns = ['Date', 'Min Temp (°C)', 'Max Temp (°C)', 'Avg Temp (°C)', 
+                                        'Min AQI', 'Max AQI', 'Avg AQI']
+                    st.dataframe(forecast_df, use_container_width=True)
+                else:
+                    st.warning("Location coordinates not available for forecast data.")
+            except Exception as e:
+                st.error(f"Error getting forecast data: {str(e)}")
+                
+            # Last week data
+            try:
+                last_week_data = None
+                if st.session_state.coordinates:
+                    last_week_data = weather.get_last_week_data(
+                        st.session_state.coordinates['lat'], 
+                        st.session_state.coordinates['lng']
+                    )
+                
+                    st.markdown("## Last Week's Historical Weather Data")
+                    st.markdown("*Temperature, humidity, and air quality data for the past 7 days*")
+                    
+                    week_tabs = st.tabs(["Temperature", "Air Quality & Humidity", "Data Table"])
+                    
+                    with week_tabs[0]:
+                        if last_week_data:
+                            temp_fig, _ = viz.plot_last_week_data(last_week_data)
+                            st.plotly_chart(temp_fig, use_container_width=True)
+                        else:
+                            st.warning("No temperature data available for the past week")
+                    
+                    with week_tabs[1]:
+                        if last_week_data:
+                            _, aqi_humidity_fig = viz.plot_last_week_data(last_week_data)
+                            st.plotly_chart(aqi_humidity_fig, use_container_width=True)
+                        else:
+                            st.warning("No AQI and humidity data available for the past week")
+                    
+                    with week_tabs[2]:
+                        if last_week_data:
+                            st.markdown("### Weather Data Table (Last 7 Days)")
+                            last_week_df = pd.DataFrame(last_week_data)
+                            last_week_df['date'] = pd.to_datetime(last_week_df['date']).dt.strftime('%Y-%m-%d')
+                            last_week_df = last_week_df.round(1)
+                            last_week_df.columns = ['Date', 'Min Temp (°C)', 'Max Temp (°C)', 'Avg Temp (°C)', 
+                                        'Avg Humidity (%)', 'Avg AQI']
+                            st.dataframe(last_week_df, use_container_width=True)
+                        else:
+                            st.warning("No historical data available for the past week")
+                else:
+                    st.warning("Location coordinates not available for historical data.")
+                
+            except Exception as e:
+                st.error(f"Error getting last week data: {str(e)}")
+
 
         # Health recommendations
         st.markdown("## Health Recommendations")
         st.markdown(st.session_state.health_advice)
         
-        # Historical data
+        # Last 24 Hours Data visualizations
         if st.session_state.historical_data and len(st.session_state.historical_data) > 0:
-            st.markdown("## Historical Data (Past 6 Months)")
-
-            tab1, tab2 = st.tabs(["Temperature", "Air Quality"])
-
-            with tab1:
-                temp_fig = viz.plot_temperature_history(st.session_state.historical_data)
-                st.plotly_chart(temp_fig, use_container_width=True)
-
-            with tab2:
-                aqi_fig = viz.plot_aqi_history(st.session_state.historical_data)
-                st.plotly_chart(aqi_fig, use_container_width=True)
-
-            # Convert historical data to DataFrame and CSV
-            historical_df = pd.DataFrame(st.session_state.historical_data)
-            csv_data = historical_df.to_csv(index=False).encode('utf-8')
-
-            # Download button
-            st.download_button(
-                label="📥 Download Historical Data (CSV)",
-                data=csv_data,
-                file_name="historical_weather_data.csv",
-                mime="text/csv"
-            )
+            st.markdown("## Last 24 Hours Data")
+            
+            last24h_tab1, last24h_tab2 = st.tabs(["Temperature", "Air Quality"])
+            
+            with last24h_tab1:
+                temp_24h_fig = viz.plot_temperature_last_24h(st.session_state.historical_data)
+                st.plotly_chart(temp_24h_fig, use_container_width=True)
+                
+            with last24h_tab2:
+                aqi_24h_fig = viz.plot_aqi_last_24h(st.session_state.historical_data)
+                st.plotly_chart(aqi_24h_fig, use_container_width=True)
         else:
-            st.info("Historical data is not available for this location.")
+            st.info("Last 24 hours data is not available for this location.")
 
-
-    # Newsletter subscription
+    # Newsletter subscription section
     st.markdown("---")
     st.markdown("## 📫 Subscribe to Weekly Weather Updates")
+    st.markdown("""
+        Get weekly updates delivered to your inbox featuring:
+        - Temperature and AQI trends for your location
+        - Weather highlights from major cities in India
+        - Global weather updates and air quality information
+        - Weekly temperature forecasts and health recommendations
+    """)
+
     with st.form(key='newsletter_form'):
         col1, col2 = st.columns(2)
         with col1:
@@ -765,27 +815,51 @@ def weather_page():
                 
                 if result["success"]:
                     st.success(result["message"])
-                    try:
-                        db_session = db.get_db()
-                        subscriber = db_session.query(db.Subscriber).filter(db.Subscriber.email == subscriber_email).first()
-                        if subscriber:
-                            email_sent = newsletter.send_welcome_email(subscriber)
-                            if email_sent:
-                                st.success("Welcome email sent!")
-                    except Exception as e:
-                        st.warning(f"Could not send welcome email: {str(e)}")
+                    
+                    with st.spinner("Sending welcome email..."):
+                        try:
+                            db_session = None
+                            try:
+                                db_session = db.get_db()
+                                subscriber = db_session.query(db.Subscriber).filter(db.Subscriber.email == subscriber_email).first()
+                                if subscriber:
+                                    email_sent = newsletter.send_welcome_email(subscriber)
+                                    if email_sent:
+                                        st.success("Welcome email sent to your inbox!")
+                                    else:
+                                        st.warning("Welcome email could not be sent. You'll still receive the weekly newsletter.")
+                            except Exception as e:
+                                st.warning(f"Could not retrieve subscriber: {str(e)}. You'll still receive the weekly newsletter.")
+                            finally:
+                                if db_session is not None:
+                                    db_session.close()
+                        except Exception as e:
+                            st.warning(f"Welcome email could not be sent: {str(e)}. You'll still receive the weekly newsletter.")
+                    
+                    st.markdown("""
+                        #### 🎉 Welcome to IcoHealth Weather Newsletter!
+                        
+                        You'll receive your first newsletter this Sunday at 8 AM. Each newsletter includes:
+                        - Personalized weather forecast for your location
+                        - Temperature and AQI trends across India
+                        - Global weather highlights
+                        - Health recommendations based on weather conditions
+                        
+                        You can unsubscribe at any time using the link in the newsletter.
+                    """)
                 else:
                     st.error(result["message"])
 
-    # Start newsletter scheduler
+    # Start the newsletter scheduler (only once)
     if 'newsletter_scheduler_started' not in st.session_state:
         try:
             newsletter.start_scheduler()
             st.session_state.newsletter_scheduler_started = True
         except Exception as e:
+            print(f"Error starting newsletter scheduler: {str(e)}")
             st.session_state.newsletter_scheduler_started = True
 
-    # Admin tools
+    # Admin section
     with st.expander("Admin Tools"):
         st.markdown("### Subscriber Management")
         
@@ -802,26 +876,38 @@ def weather_page():
             if st.button("Get All Subscribers"):
                 try:
                     db_session = db.get_db()
-                    subscribers = db_session.query(db.Subscriber).all()
-                    if subscribers:
-                        subscribers_data = [{
-                            "ID": sub.id,
-                            "Name": sub.name,
-                            "Email": sub.email,
-                            "Subscribed On": sub.subscribed_at.strftime('%Y-%m-%d %H:%M:%S') if sub.subscribed_at else "N/A",
-                            "Status": "Active" if sub.is_active else "Inactive",
-                            "Location": f"{sub.location_city or 'N/A'}, {sub.location_state or 'N/A'}, {sub.location_country or 'N/A'}",
-                            "Last Email": sub.last_email_sent.strftime('%Y-%m-%d %H:%M:%S') if sub.last_email_sent else "Never"
-                        } for sub in subscribers]
+                    try:
+                        subscribers = db_session.query(db.Subscriber).all()
                         
-                        st.session_state.subscribers_list = subscribers_data
-                        st.session_state.admin_view_subscribers = True
-                        st.session_state.admin_message = f"Found {len(subscribers)} subscribers"
-                    else:
-                        st.session_state.admin_message = "No subscribers found"
+                        if subscribers:
+                            subscribers_data = []
+                            for sub in subscribers:
+                                subscribed_at_ist = sub.get_subscribed_at_ist()
+                                last_email_sent_ist = sub.get_last_email_sent_ist()
+                                
+                                subscribers_data.append({
+                                    "ID": sub.id,
+                                    "Name": sub.name,
+                                    "Email": sub.email,
+                                    "Subscribed On (IST)": subscribed_at_ist.strftime('%Y-%m-%d %H:%M:%S') if subscribed_at_ist else "N/A",
+                                    "Status": "Active" if sub.is_active else "Inactive",
+                                    "Location": f"{sub.location_city or 'N/A'}, {sub.location_state or 'N/A'}, {sub.location_country or 'N/A'}",
+                                    "Last Email (IST)": last_email_sent_ist.strftime('%Y-%m-%d %H:%M:%S') if last_email_sent_ist else "Never"
+                                })
+                            
+                            st.session_state.subscribers_list = subscribers_data
+                            st.session_state.admin_view_subscribers = True
+                            st.session_state.admin_message = f"Found {len(subscribers)} subscribers"
+                        else:
+                            st.session_state.admin_message = "No subscribers found in the database"
+                            st.session_state.admin_view_subscribers = False
+                            st.session_state.subscribers_list = []
+                    finally:
+                        db_session.close()
                 except Exception as e:
-                    st.session_state.admin_message = f"Error: {str(e)}"
-                
+                    st.session_state.admin_message = f"Error retrieving subscribers: {str(e)}"
+                    st.session_state.admin_view_subscribers = False
+            
             if st.session_state.admin_message:
                 st.info(st.session_state.admin_message)
                 
@@ -837,23 +923,39 @@ def weather_page():
                     if subscriber_email:
                         result = db.unsubscribe(subscriber_email)
                         st.info(result["message"])
+                    else:
+                        st.warning("Please enter an email address")
+            
             with col2:
                 if st.button("Permanently Delete"):
                     if subscriber_email:
                         result = db.delete_subscriber(subscriber_email)
-                        st.info(result["message"])
+                        if result["success"]:
+                            st.success(result["message"])
+                        else:
+                            st.error(result["message"])
+                    else:
+                        st.warning("Please enter an email address")
         
         with admin_tabs[2]:
+            st.warning("⚠️ These actions affect the entire subscriber database. Use with caution.")
+            
             if st.button("Count Subscribers"):
                 result = db.count_subscribers()
-                st.info(f"Total: {result['total']}, Active: {result['active']}, Inactive: {result['inactive']}")
+                if result["success"]:
+                    st.info(f"Total subscribers: {result['total']} (Active: {result['active']}, Inactive: {result['inactive']})")
+                else:
+                    st.error(result["message"])
             
             if st.button("Clear All Data (DANGER)"):
+                st.error("⚠️ This will delete ALL subscriber data. This cannot be undone.")
                 confirm = st.text_input("Type 'DELETE ALL' to confirm")
                 if confirm == "DELETE ALL":
                     result = db.clear_all_subscribers()
-                    st.info(result["message"])
-
+                    if result["success"]:
+                        st.success(result["message"])
+                    else:
+                        st.error(result["message"])
     
     
 
@@ -1020,7 +1122,9 @@ def visualizations_page():
         except Exception as e:
             st.error(f"Error processing file: {str(e)}")
             st.info("Please make sure your CSV file is properly formatted and try again.")
-        
+
+
+
 
 
 def main():
@@ -1037,6 +1141,8 @@ def main():
         weather_page()
     elif current_page == "visualizations":
         visualizations_page()
+    elif current_page == "model":
+        model_page()
 
 if __name__ == "__main__":
     main()
