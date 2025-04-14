@@ -4,14 +4,15 @@ from datetime import datetime, timedelta
 import sendgrid
 from sendgrid.helpers.mail import Mail, Email, To, Content, MimeType
 from apscheduler.schedulers.background import BackgroundScheduler
-
+from dotenv import load_dotenv
 import weather_api as weather
 import data_utils as utils
 import database as db
 
+load_dotenv()
 # SendGrid API key from environment variables
-SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY", "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")
-FROM_EMAIL = os.getenv("FROM_EMAIL", "uttaretejas@gmail.com")
+SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY", "")
+FROM_EMAIL = os.getenv("FROM_EMAIL", "")
 
 # List of major cities in India for weather tracking
 INDIA_CITIES = [
