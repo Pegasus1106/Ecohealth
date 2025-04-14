@@ -37,7 +37,7 @@ def get_coordinates(city, state, country):
         }
         
         response = requests.get(url, params=params, headers=headers)
-        response.raise_for_status()   #error
+        response.raise_for_status()
         
         data = response.json()
         if data and len(data) > 0:
