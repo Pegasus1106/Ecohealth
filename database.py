@@ -47,6 +47,22 @@ class Subscriber(Base):
     location_state = Column(String, nullable=True)
     location_country = Column(String, nullable=True)
     last_email_sent = Column(DateTime, nullable=True)
+    
+    def get_subscribed_at_ist(self):
+        """Get the subscribed_at time in Indian Standard Time (IST)"""
+        if self.subscribed_at:
+            # Convert UTC to IST (UTC + 5:30)
+            from datetime import timedelta
+            return self.subscribed_at + timedelta(hours=5, minutes=30)
+        return None
+        
+    def get_last_email_sent_ist(self):
+        """Get the last_email_sent time in Indian Standard Time (IST)"""
+        if self.last_email_sent:
+            # Convert UTC to IST (UTC + 5:30)
+            from datetime import timedelta
+            return self.last_email_sent + timedelta(hours=5, minutes=30)
+        return None
 
 # Create tables
 try:
